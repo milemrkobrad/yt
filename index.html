@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VideoStream - YouTube Clone</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css"
+        xintegrity="sha512-Fo3rlrZj/k7ujTnHg4CGR2D7kSs0wLpbrn+B/T3y+tB5t2uOQfX22Jj6W7bLw1uK5H5F6d5GzFwF/iR5c9Sg=="
+        crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <style>
+        /* Custom scrollbar styling (optional but looks good in dark mode) */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #1f2937;
+            /* Gray-800 */
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            /* Gray-600 */
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+            /* Gray-500 */
+        }
+
+        .video-card-grid {
+            /* Responsive grid for video cards */
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+
+        @media (max-width: 640px) {
+            .video-card-grid {
+                /* Single column on mobile */
+                grid-template-columns: 1fr;
+                gap: 1rem;
+            }
+        }
+
+        /* Custom utility for the sparkle buttons */
+        .sparkle-btn {
+            @apply inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-full shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-150 whitespace-nowrap;
+            @apply ring-offset-gray-900;
+            /* Dark mode offset */
+        }
+    </style>
+</head>
+
+<body class="bg-gray-900 text-gray-100 min-h-screen font-sans antialiased">
+
+    <!-- Header and Search Bar -->
+    <!-- Header and Search Bar -->
+    <header class="sticky top-0 z-50 bg-gray-900 border-b border-gray-800 shadow-xl">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+            <!-- Top Row: Title, Search, API Key Info -->
+            <div class="flex justify-between items-center gap-4">
+                <h1 class="text-2xl font-bold text-red-500 tracking-wider flex-shrink-0">
+                    <i class="fab fa-youtube text-red-600 mr-1"></i>yt
+                </h1>
+                <div class="flex-grow flex items-center gap-2">
+                    <form id="search-form" class="flex-grow">
+                        <input type="search" id="search-input" placeholder="Search videos..."
+                            class="w-full py-2 px-4 rounded-full bg-gray-800 text-gray-100 border border-gray-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200" />
+                </div>
+                </form>
+                <!-- Clear Button -->
+                <!-- <button 
+                        style="width: 3rem;"
+                        type="button" 
+                        id="clear-btn"
+                        class="flex-shrink-0 bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white rounded-full p-2.5 transition-colors shadow-md hover:shadow-lg"
+                        onclick="document.getElementById('search-input').value = ''; document.getElementById('search-input').focus();"
+                        title="Clear search"
+                    >
+                        <i class="fas fa-times text-lg"></i>
+                    </button> -->
+                <!-- Search Button -->
+                <button style="width: 3rem;" type="submit" id="search-btn"
+                    class="flex-shrink-0 bg-red-600 hover:bg-red-700 text-white rounded-full p-2.5 transition-colors shadow-md hover:shadow-lg"
+                    title="Search">
+                    <i class="fas fa-search text-lg"></i>
+                </button>
+            </div>
+        </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+        <div id="results-container" class="video-card-grid">
+            <!-- Video cards will be injected here -->
+        </div>
+
+        <!-- Loading Indicator -->
+        <div id="loading-spinner" class="mt-8 text-center hidden">
+            <div class="animate-spin inline-block w-8 h-8 border-4 border-red-500 border-t-transparent rounded-full"
+                role="status">
+                <span class="sr-only">Loading...</span>
+            </div>
+            <p class="text-gray-400 mt-2">Loading more videos...</p>
+        </div>
+
+        <!-- Error/Initial Message -->
+        <div id="message" class="mt-12 text-center text-gray-500">
+            <p class="text-lg">Enter a search query above to start browsing videos!</p>
+            <p class="mt-2 text-sm text-yellow-400">
+            </p>
+        </div>
+
+        <!-- Observer element for infinite scroll -->
+        <div id="scroll-observer" class="h-1 bg-transparent"></div>
+
+    </main>
+
+    <!-- Video Playback Modal -->
+    <div id="video-modal"
+        class="fixed inset-0 bg-gray-900 bg-opacity-95 z-50 hidden flex items-center justify-center p-4"
+        onclick="closeModal()">
+        <div class="relative w-full max-w-4xl max-h-full" onclick="event.stopPropagation()">
+            <!-- Close Button -->
+            <button
+                class="absolute -top-3 -right-3 sm:-top-6 sm:-right-6 text-2xl bg-red-600 text-white rounded-full p-2 w-10 h-10 flex items-center justify-center shadow-lg hover:bg-red-700 transition-colors"
+                onclick="closeModal()">
+                &times;
+            </button>
+            <!-- Embedded Video Player -->
+            <div id="video-player-container" class="relative w-full" style="padding-top: 56.25%;">
+                <!-- 16:9 Aspect Ratio -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Configuration ---
+        const YOUTUBE_API_KEY = "AIzaSyC0c1uB-BJS8XskzGtcj2p8Oxz2GkZSZok"; // <<< REPLACE THIS WITH YOUR YOUTUBE KEY!
+        const API_BASE_URL = "https://www.googleapis.com/youtube/v3";
+        const MAX_RESULTS = 25;
+
+        // --- State Management ---
+        let currentSearchQuery = '';
+        let nextPageToken = null;
+        let isFetching = false;
+
+        // --- DOM Elements ---
+        const searchForm = document.getElementById('search-form');
+        const searchInput = document.getElementById('search-input');
+        const resultsContainer = document.getElementById('results-container');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const messageDisplay = document.getElementById('message');
+        const videoModal = document.getElementById('video-modal');
+        const videoPlayerContainer = document.getElementById('video-player-container');
+        const scrollObserver = document.getElementById('scroll-observer');
+
+        // --- Utility Functions ---
+
+        /**
+         * Converts ISO 8601 duration (e.g., PT1H30M15S) to human-readable format (H:MM:SS or MM:SS).
+         * @param {string} isoDuration - The ISO 8601 duration string.
+         * @returns {string} Human-readable duration string.
+         */
+        function formatDuration(isoDuration) {
+            if (!isoDuration) return 'N/A';
+            const regex = /P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)W)?(?:(\d+)D)?T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/;
+            const matches = isoDuration.match(regex);
+
+            if (!matches) return 'N/A';
+
+            const hours = parseInt(matches[5] || 0);
+            const minutes = parseInt(matches[6] || 0);
+            const seconds = parseInt(matches[7] || 0);
+
+            const parts = [];
+            if (hours > 0) parts.push(hours);
+            parts.push(String(minutes).padStart(hours > 0 ? 2 : 1, '0'));
+            parts.push(String(seconds).padStart(2, '0'));
+
+            return parts.join(':');
+        }
+
+        /**
+         * Formats a large number into a human-readable string (e.g., 1234567 -> 1.23M).
+         * @param {string} views - The view count as a string.
+         * @returns {string} Formatted view count.
+         */
+        function formatViews(views) {
+            if (!views) return 'N/A views';
+            const num = parseInt(views, 10);
+            if (num < 1000) return num.toLocaleString() + ' views';
+            if (num < 1000000) return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K views';
+            if (num < 1000000000) return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M views';
+            return (num / 1000000000).toFixed(1).replace(/\.0$/, '') + 'B views';
+        }
+
+        /**
+         * Generic API fetch wrapper with exponential backoff.
+         */
+        async function fetchWithRetry(url, options = {}, retries = 3) {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(`API Error ${response.status}: ${errorData.error.message}`);
+                    }
+                    return response.json();
+                } catch (error) {
+                    if (i === retries - 1) throw error;
+                    // Exponential backoff: 2^i * 1000ms delay
+                    await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+                }
+            }
+        }
+
+
+
+        // --- UI Control Functions ---
+
+        /**
+         * Helper function to update the input and trigger a new search.
+         * @param {string} query - The new search term.
+         */
+        function performNewSearch(query) {
+            searchInput.value = query;
+
+            // Manually trigger the search process
+            currentSearchQuery = query;
+            nextPageToken = null;
+            searchVideos(currentSearchQuery);
+        }
+
+        // --- Core Functions ---
+
+        async function searchVideos(query, pageToken = null) {
+            //call /api/search method from backend
+            try {
+                const response = await fetch(`/api/search?q=${encodeURIComponent(query)}&pageToken=${pageToken || ''}`);
+                if (!response.ok) {
+                    throw new Error(`Server Error ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                const mapped = data.results.map(item => ({
+                    id: item.video.id,
+                    title: item.video.title,
+                    thumbnailUrl: item.video.thumbnail_src || null,
+                    duration: item.video.duration,
+                    views: item.video.views
+                }));
+
+                // Process and render results
+                renderResults(mapped, !pageToken);
+                nextPageToken = data.nextPageToken || null;
+
+            } catch (error) {
+                console.error("Backend Fetch Error:", error);
+                messageDisplay.textContent = `Error fetching data: ${error.message}.`;
+                messageDisplay.classList.remove('hidden');
+                nextPageToken = null; // Stop infinite scrolling on error
+            }
+        }
+
+        /**
+         * Main search logic:
+         * 1. Search endpoint to get video IDs and snippets.
+         * 2. Videos endpoint to get duration and view count.
+         * @param {string} query - The search term.
+         * @param {string | null} pageToken - Token for the next page of results.
+         */
+        async function searchVideosAPI(query, pageToken = null) {
+            if (isFetching || !query) return;
+
+            // --- FIX: Handle missing API key gracefully to prevent console error logs ---
+            if (YOUTUBE_API_KEY === "YOUR_YOUTUBE_API_KEY") {
+                resultsContainer.innerHTML = ''; // Clear old results
+                messageDisplay.textContent = "⚠️ IMPORTANT: Please replace 'YOUR_YOUTUBE_API_KEY' in the JavaScript code with your actual YouTube Data API Key to enable video search.";
+                messageDisplay.classList.remove('hidden');
+                return; // Stop execution
+            }
+            // --- END FIX ---
+
+            isFetching = true;
+            loadingSpinner.classList.remove('hidden');
+            messageDisplay.classList.add('hidden');
+
+            try {
+                // --- 1. Search for video IDs and get next page token ---
+                let searchUrl = `${API_BASE_URL}/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=${MAX_RESULTS}&key=${YOUTUBE_API_KEY}`;
+                if (pageToken) {
+                    searchUrl += `&pageToken=${pageToken}`;
+                }
+
+                const searchData = await fetchWithRetry(searchUrl);
+
+                // Extract video IDs and update pagination token
+                const videoItems = searchData.items.filter(item => item.id.videoId);
+                const videoIds = videoItems.map(item => item.id.videoId).join(',');
+                nextPageToken = searchData.nextPageToken || null;
+
+                if (videoIds.length === 0) {
+                    if (!pageToken) {
+                        messageDisplay.textContent = `No results found for "${query}". Try a different search term.`;
+                        messageDisplay.classList.remove('hidden');
+                    }
+                    return;
+                }
+
+                // --- 2. Get content details (duration) and statistics (views) ---
+                const videoDetailsUrl = `${API_BASE_URL}/videos?part=contentDetails,statistics&id=${videoIds}&key=${YOUTUBE_API_KEY}`;
+                const detailsData = await fetchWithRetry(videoDetailsUrl);
+
+                // Map details back to the original search items
+                const videoMap = new Map(detailsData.items.map(video => [video.id, video]));
+
+                const combinedResults = videoItems.map(item => {
+                    const details = videoMap.get(item.id.videoId);
+                    return {
+                        id: item.id.videoId,
+                        title: item.snippet.title,
+                        thumbnailUrl: item.snippet.thumbnails.medium.url || item.snippet.thumbnails.default.url,
+                        channelTitle: item.snippet.channelTitle,
+                        duration: details?.contentDetails?.duration,
+                        views: details?.statistics?.viewCount,
+                    };
+                });
+
+                renderResults(combinedResults, !pageToken); // Clear existing results if it's the first page
+
+            } catch (error) {
+                console.error("API Fetch Error:", error);
+                messageDisplay.textContent = `Error fetching data: ${error.message}. Check your YouTube API key and quota.`;
+                messageDisplay.classList.remove('hidden');
+                nextPageToken = null; // Stop infinite scrolling on error
+            } finally {
+                isFetching = false;
+                loadingSpinner.classList.add('hidden');
+            }
+        }
+
+        /**
+         * Renders the video results on the page.
+         * @param {Array<Object>} videos - Array of video objects.
+         * @param {boolean} clearExisting - Whether to clear the container before adding results.
+         */
+        function renderResults(videos, clearExisting) {
+            if (clearExisting) {
+                resultsContainer.innerHTML = '';
+            }
+
+            const fragment = document.createDocumentFragment();
+
+            videos.forEach(video => {
+                const viewsText = formatViews(video.views);
+                const durationText = formatDuration(video.duration);
+
+                const card = document.createElement('div');
+                card.className = "bg-gray-800 rounded-xl overflow-hidden shadow-lg hover:shadow-red-500/50 transition-all duration-300 transform hover:scale-[1.01] cursor-pointer";
+                card.setAttribute('data-video-id', video.id);
+                card.onclick = () => playVideo(video.id);
+
+                card.innerHTML = `
+                    <div class="relative">
+                        <img 
+                            src="${video.thumbnailUrl}" 
+                            alt="${video.title}" 
+                            class="w-full h-48 object-cover object-center"
+                            onerror="this.onerror=null;this.src='https://placehold.co/480x270/1f2937/FFFFFF?text=Video+Not+Found'"
+                        >
+                        <span class="absolute bottom-2 right-2 bg-black bg-opacity-80 text-xs font-semibold px-2 py-0.5 rounded text-white shadow-md">
+                            ${durationText}
+                        </span>
+                    </div>
+                    <div class="p-4">
+                        <h2 class="text-white text-md font-semibold line-clamp-2 mb-1" title="${video.title}">
+                            ${video.title}
+                        </h2>
+                        <p class="text-gray-400 text-sm mb-1 line-clamp-1">
+                            ${video.channelTitle}
+                        </p>
+                        <p class="text-gray-500 text-xs">
+                            <i class="fas fa-eye mr-1"></i>${viewsText}
+                        </p>
+                    </div>
+                `;
+                fragment.appendChild(card);
+            });
+
+            resultsContainer.appendChild(fragment);
+        }
+
+        /**
+         * Displays the video in an embedded player modal.
+         * @param {string} videoId - The YouTube video ID.
+         */
+        function playVideo(videoId) {
+            const iframe = document.createElement('iframe');
+            iframe.className = "absolute top-0 left-0 w-full h-full rounded-xl";
+
+            // Enhanced embed URL with additional parameters
+            iframe.src = `https://www.youtube.com/embed/${videoId}`;
+            console.log('src:', iframe.src);
+
+            iframe.frameBorder = "0";
+            iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture";
+            iframe.allowFullscreen = true;
+
+            // Add referrerpolicy attribute
+            iframe.referrerPolicy = "strict-origin-when-cross-origin";
+
+            // Clear previous player and add new one
+            videoPlayerContainer.innerHTML = '';
+            videoPlayerContainer.appendChild(iframe);
+
+            // Show the modal
+            videoModal.classList.remove('hidden');
+            videoModal.classList.add('flex');
+            document.body.style.overflow = 'hidden';
+
+            //load suggested videos 
+            loadSuggestedVideos(videoId);
+        }
+
+
+        async function loadSuggestedVideos(videoId, pageToken = null) {
+                    // Fetch suggested videos using YouTube's related videos endpoint
+             try {
+                const response = await fetch(`/api/suggestions?videoId=${encodeURIComponent(videoId)}&pageToken=${pageToken || ''}`);
+                if (!response.ok) {
+                    throw new Error(`Server Error ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                console.log("Sdata:", data);
+                const mapped = data.map(item => ({
+                    id: item.id,
+                    title: item.title,
+                    thumbnailUrl: item.thumbnailUrl || null,
+                    duration: item.duration,
+                    views: item.views
+                    }));
+
+                // Process and render results
+                console.log("Suggested videos:", mapped);
+                renderResults(mapped, true);
+                //nextPageToken = data.nextPageToken || null;
+
+            } catch (error) {
+                console.error("Backend Fetch Error:", error);
+                messageDisplay.textContent = `Error fetching data: ${error.message}.`;
+                messageDisplay.classList.remove('hidden');
+                nextPageToken = null; // Stop infinite scrolling on error
+            }
+        }
+
+
+        /**
+         * Closes the video playback modal and stops the video.
+         */
+        function closeModal() {
+            // Stop the video by clearing the iframe source
+            videoPlayerContainer.innerHTML = '';
+            videoModal.classList.add('hidden');
+            videoModal.classList.remove('flex');
+            document.body.style.overflow = ''; // Restore scrolling
+        }
+
+        // --- Event Handlers and Initializers ---
+
+        /**
+         * Handles the search form submission.
+         * @param {Event} e - The form submit event.
+         */
+        function handleSearch(e) {
+            e.preventDefault();
+            const query = searchInput.value.trim();
+            if (query === currentSearchQuery || !query) return;
+
+            currentSearchQuery = query;
+            nextPageToken = null; // Reset pagination for new search
+            searchVideos(currentSearchQuery);
+        }
+
+        /**
+         * Intersection Observer callback for infinite scrolling.
+         * @param {IntersectionObserverEntry[]} entries - Array of intersection entries.
+         */
+        function handleIntersection(entries) {
+            const [entry] = entries;
+            // If the observer is visible, there's a next page, and we're not currently fetching:
+            if (entry.isIntersecting && nextPageToken && !isFetching) {
+                searchVideos(currentSearchQuery, nextPageToken);
+            }
+        }
+
+        // Initialize the app
+        function init() {
+            searchForm.addEventListener('submit', handleSearch);
+
+            // Set up Intersection Observer for infinite scrolling
+            // const observer = new IntersectionObserver(handleIntersection, {
+            //     root: null, // viewport
+            //     rootMargin: '0px 0px 200px 0px', // load when 200px from bottom
+            //     threshold: 0.1
+            // });
+            // observer.observe(scrollObserver);
+
+            // Initial search on load with the default value
+            const initialQuery = searchInput.value;
+            if (initialQuery) {
+                currentSearchQuery = initialQuery;
+                searchVideos(currentSearchQuery);
+            }
+        }
+
+        // Set the search query to a default topic for better demonstration
+        searchInput.value = "Trending music videos";
+        init();
+
+    </script>
+</body>
+
+</html>
