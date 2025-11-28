@@ -88,7 +88,7 @@ function normalizeToJson(jsText) {
  */
 
 async function youtubeWatchSuggestions(videoId, maxPages = 5) {
-    const result = { results: [], version: require('./package.json').version, continuationCount: 0 };
+    //const result = { results: [], version: require('./package.json').version, continuationCount: 0 };
     const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
     // Fetch watch page HTML
@@ -98,77 +98,158 @@ async function youtubeWatchSuggestions(videoId, maxPages = 5) {
 
     const text = resp.data;
 
+    const match = text.match(/var ytInitialData\s*=\s*(\{[\s\S]*?\});/);
 
-    const token = '"lockupMetadataViewModel"';
+    if (match) {
+        const json = match[1];
+        const parsed = JSON.parse(json);
+        //save to text file for debugging
+        require('fs').writeFileSync('ytInitialData.json', JSON.stringify(parsed, null, 2));
+
+        // Extract blocks
+        const blocks = extractBlocksByKey(text, 'lockupViewModel');
+
+        const results = [];
+
+        for (const raw of blocks) {
+            const parsed = safeParse(raw);
+            if (!parsed) continue;
+
+            // parsed should be an object like { lockupViewModel: { ... } } or already the inner object.
+            const vm = parsed.lockupViewModel ? parsed.lockupViewModel : parsed;
+
+            // videoId: prefer contentId, else try to find watchEndpoint.videoId in nested commandContext
+            let videoId = vm.contentId || null;
+            try {
+                if (!videoId) {
+                    const cmd = vm.rendererContext && vm.rendererContext.commandContext && vm.rendererContext.commandContext.onTap && vm.rendererContext.commandContext.onTap.innertubeCommand;
+                    if (cmd && cmd.watchEndpoint && cmd.watchEndpoint.videoId) {
+                        videoId = cmd.watchEndpoint.videoId;
+                    } else {
+                        // sometimes nested deeper
+                        const watchEndpoint = JSON.stringify(vm).match(/"watchEndpoint":\s*{[^}]*"videoId"\s*:\s*"([^"]+)"/);
+                        if (watchEndpoint) videoId = watchEndpoint[1];
+                    }
+                }
+            } catch (e) { /* ignore */ }
+
+            // title: try rendererContext.accessibilityContext.label, else look for title.simpleText or title.runs[].text
+            let title = null;
+            try {
+                title = vm.rendererContext && vm.rendererContext.accessibilityContext && vm.rendererContext.accessibilityContext.label;
+                if (!title) {
+                    // search for common title locations
+                    const t1 = vm.title && (vm.title.simpleText || (vm.title.runs && vm.title.runs.map(r => r.text).join('')));
+                    if (t1) title = t1;
+                    else {
+                        // fallback: try shortByline / adjacent title text in object
+                        const match = JSON.stringify(vm).match(/"simpleText"\s*:\s*"([^"]{1,200})"/);
+                        if (match) title = match[1];
+                    }
+                }
+            } catch (e) { /* ignore */ }
+
+            // url: prefer commandMetadata.webCommandMetadata.url if present, else construct from videoId
+            let url = null;
+            try {
+                const meta = vm.rendererContext && vm.rendererContext.commandContext && vm.rendererContext.commandContext.onTap && vm.rendererContext.commandContext.onTap.innertubeCommand && vm.rendererContext.commandContext.onTap.innertubeCommand.commandMetadata && vm.rendererContext.commandContext.onTap.innertubeCommand.commandMetadata.webCommandMetadata;
+                if (meta && meta.url) url = meta.url;
+                else if (videoId) url = `/watch?v=${videoId}`;
+            } catch (e) { /* ignore */ }
+
+            // push result (skip if we have neither id nor title)
+            if (videoId || title || url) {
+                results.push({
+                    videoId: videoId || null,
+                    title: title || null,
+                    url: url || null
+                });
+            }
+        }
+        console.log('results:', results);
+        return results;
+    }
+}
+
+// Helper: find all JSON-ish blocks that follow a given keyName, by matching balanced braces.
+// Handles quoted strings and escaped quotes so braces inside strings are ignored.
+function extractBlocksByKey(text, keyName) {
+    const blocks = [];
+    const needle = `"${keyName}"`;
     let idx = 0;
-    const items = [];
 
     while (true) {
-        const tokenPos = text.indexOf(token, idx);
-        if (tokenPos === -1) break;
+        const pos = text.indexOf(needle, idx);
+        if (pos === -1) break;
 
-        // find colon after token
-        const colonPos = text.indexOf(':', tokenPos + token.length);
-        if (colonPos === -1) { idx = tokenPos + token.length; continue; }
+        // find first '{' after the key
+        let i = text.indexOf('{', pos + needle.length);
+        if (i === -1) { idx = pos + needle.length; continue; }
 
-        // extract balanced object starting from colonPos
-        const objExtract = extractBalancedObject(text, colonPos);
-        if (!objExtract) { idx = tokenPos + token.length; continue; }
+        let depth = 0;
+        let inString = false;
+        let stringChar = null;
+        let escaped = false;
+        let j = i;
 
-        const rawBlock = objExtract.text;
+        for (; j < text.length; j++) {
+            const ch = text[j];
 
-        // Normalize and parse to JSON
-        const jsonLike = normalizeToJson(rawBlock);
-
-        let metadata;
-        try {
-            metadata = JSON.parse(jsonLike);
-        } catch (err) {
-            // parsing failed; still attempt to salvage some fields with regex fallback
-            metadata = null;
+            if (inString) {
+                if (escaped) {
+                    escaped = false;
+                } else if (ch === '\\') {
+                    escaped = true;
+                } else if (ch === stringChar) {
+                    inString = false;
+                    stringChar = null;
+                }
+                // else continue inside string
+            } else {
+                if (ch === '"' || ch === "'") {
+                    inString = true;
+                    stringChar = ch;
+                } else if (ch === '{') {
+                    depth++;
+                } else if (ch === '}') {
+                    depth--;
+                    if (depth === 0) { // closed the top-level object
+                        const blockText = text.slice(i, j + 1);
+                        blocks.push(blockText);
+                        idx = j + 1;
+                        break;
+                    }
+                }
+            }
         }
 
-        // 1) title (prefer parsed)
-        let title = metadata?.title?.content ?? null;
-        if (!title) {
-            const m = rawBlock.match(/"title"\s*:\s*\{\s*"content"\s*:\s*"([^"]+)"/s);
-            if (m) title = m[1];
-        }
-
-        // 2) views (secondary text / metadataRows)
-        let views = metadata?.metadata?.contentMetadataViewModel?.metadataRows?.[1]?.metadataParts?.[0]?.text?.content ?? null;
-        if (!views) {
-            const m = rawBlock.match(/"secondaryText"\s*:\s*\{\s*"content"\s*:\s*"([^"]+)"/s) ||
-                rawBlock.match(/"metadataParts"\s*:\s*\[\s*\{\s*"text"\s*:\s*\{\s*"content"\s*:\s*"([^"]+)"/s);
-            if (m) views = m[1];
-        }
-
-        // 3) duration and thumbnail & id — often stored nearby, so take context around the extracted object
-        const ctxStart = Math.max(0, tokenPos - 1500);
-        const ctxEnd = Math.min(text.length, objExtract.endPos + 1500);
-        const ctx = text.slice(ctxStart, ctxEnd);
-
-        const idMatch = ctx.match(/"videoId"\s*:\s*"([^"]+)"/);
-        const id = idMatch ? idMatch[1] : null;
-
-        // thumbnail source pattern: "url":"https://i.ytimg.com/vi/ID/hqdefault.jpg" or similar
-        const thumbMatch = ctx.match(/"url"\s*:\s*"((?:https?:)?\/\/i\.ytimg\.com\/[^"]+)"/) ||
-            ctx.match(/"url"\s*:\s*"((?:https?:)?\/\/[^"]+\/hqdefault\.jpg[^"]*)"/);
-        const thumbnailUrl = thumbMatch ? thumbMatch[1] : null;
-
-        // duration: look for thumbnailBadge text e.g. "12:40"
-        const durMatch = ctx.match(/"thumbnailBadgeViewModel"[\s\S]*?"text"\s*:\s*"([^"]+)"/) ||
-            ctx.match(/"overlay".[^\n\r]{0,200}?"text"\s*:\s*"([^"]+)"/);
-        const duration = durMatch ? durMatch[1] : null;
-
-        items.push({ id, title, thumbnailUrl, duration, views });
-
-        // continue after the extracted object
-        idx = objExtract.endPos;
+        // if loop finished without finding matching close, break to avoid infinite loop
+        if (j >= text.length) break;
     }
 
-    return items;
+    return blocks;
 }
+
+// Try to safely parse a JSON-ish string. If JSON.parse fails, try a few mild cleanups.
+function safeParse(jsonText) {
+    try {
+        return JSON.parse(jsonText);
+    } catch (e) {
+        // common issue: trailing commas -> remove simple trailing commas before closing braces/brackets
+        let cleaned = jsonText
+            .replace(/,\s*(\}|])/g, '$1')                 // remove trailing commas
+            .replace(/([:{,]\s*)'([^']*)'/g, '$1"$2"');  // single-quoted keys/strings -> double quotes (best-effort)
+
+        try {
+            return JSON.parse(cleaned);
+        } catch (e2) {
+            // give up parsing and return null
+            return null;
+        }
+    }
+}
+
+
 
 module.exports = { youtubeWatchSuggestions };
 

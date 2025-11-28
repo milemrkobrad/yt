@@ -53,6 +53,30 @@
             @apply ring-offset-gray-900;
             /* Dark mode offset */
         }
+
+        .video-card:hover .play-overlay {
+            opacity: 1;
+        }
+
+        /* Loading Skeleton Base Style */
+        .skeleton {
+            background-color: #374151;
+            /* Gray-700 */
+            background-image: linear-gradient(90deg, #374151 0%, #4b5563 50%, #374151 100%);
+            /* Gray-600 */
+            background-size: 200% 100%;
+            animation: loading 1.5s infinite linear;
+        }
+
+        @keyframes loading {
+            0% {
+                background-position: 200% 0;
+            }
+
+            100% {
+                background-position: -200% 0;
+            }
+        }
     </style>
 </head>
 
@@ -87,7 +111,7 @@
                 <!-- Search Button -->
                 <button style="width: 3rem;" type="submit" id="search-btn"
                     class="flex-shrink-0 bg-red-600 hover:bg-red-700 text-white rounded-full p-2.5 transition-colors shadow-md hover:shadow-lg"
-                    title="Search">
+                    onclick="performNewSearch( document.getElementById('search-input').value )" title="Search">
                     <i class="fas fa-search text-lg"></i>
                 </button>
             </div>
@@ -98,7 +122,7 @@
     <!-- Main Content Area -->
     <main class="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
         <div id="results-container" class="video-card-grid">
-            <!-- Video cards will be injected here -->
+            <!-- Video cards or skeleton loader will be injected here -->
         </div>
 
         <!-- Loading Indicator -->
@@ -241,6 +265,18 @@
         // --- Core Functions ---
 
         async function searchVideos(query, pageToken = null) {
+
+            isFetching = true;
+            loadingSpinner.classList.add('hidden'); // Hide infinite scroll spinner initially
+
+            // Prikazivanje skeleton loadera samo za novo pretraživanje (ne za beskonačno pomicanje)
+            if (!pageToken) {
+                renderLoadingSkeleton();
+                messageDisplay.classList.add('hidden'); // Hide initial/error message
+            } else {
+                loadingSpinner.classList.remove('hidden'); // Show infinite scroll spinner
+            }
+
             //call /api/search method from backend
             try {
                 const response = await fetch(`/api/search?q=${encodeURIComponent(query)}&pageToken=${pageToken || ''}`);
@@ -266,82 +302,9 @@
                 messageDisplay.classList.remove('hidden');
                 nextPageToken = null; // Stop infinite scrolling on error
             }
-        }
-
-        /**
-         * Main search logic:
-         * 1. Search endpoint to get video IDs and snippets.
-         * 2. Videos endpoint to get duration and view count.
-         * @param {string} query - The search term.
-         * @param {string | null} pageToken - Token for the next page of results.
-         */
-        async function searchVideosAPI(query, pageToken = null) {
-            if (isFetching || !query) return;
-
-            // --- FIX: Handle missing API key gracefully to prevent console error logs ---
-            if (YOUTUBE_API_KEY === "YOUR_YOUTUBE_API_KEY") {
-                resultsContainer.innerHTML = ''; // Clear old results
-                messageDisplay.textContent = "⚠️ IMPORTANT: Please replace 'YOUR_YOUTUBE_API_KEY' in the JavaScript code with your actual YouTube Data API Key to enable video search.";
-                messageDisplay.classList.remove('hidden');
-                return; // Stop execution
-            }
-            // --- END FIX ---
-
-            isFetching = true;
-            loadingSpinner.classList.remove('hidden');
-            messageDisplay.classList.add('hidden');
-
-            try {
-                // --- 1. Search for video IDs and get next page token ---
-                let searchUrl = `${API_BASE_URL}/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=${MAX_RESULTS}&key=${YOUTUBE_API_KEY}`;
-                if (pageToken) {
-                    searchUrl += `&pageToken=${pageToken}`;
-                }
-
-                const searchData = await fetchWithRetry(searchUrl);
-
-                // Extract video IDs and update pagination token
-                const videoItems = searchData.items.filter(item => item.id.videoId);
-                const videoIds = videoItems.map(item => item.id.videoId).join(',');
-                nextPageToken = searchData.nextPageToken || null;
-
-                if (videoIds.length === 0) {
-                    if (!pageToken) {
-                        messageDisplay.textContent = `No results found for "${query}". Try a different search term.`;
-                        messageDisplay.classList.remove('hidden');
-                    }
-                    return;
-                }
-
-                // --- 2. Get content details (duration) and statistics (views) ---
-                const videoDetailsUrl = `${API_BASE_URL}/videos?part=contentDetails,statistics&id=${videoIds}&key=${YOUTUBE_API_KEY}`;
-                const detailsData = await fetchWithRetry(videoDetailsUrl);
-
-                // Map details back to the original search items
-                const videoMap = new Map(detailsData.items.map(video => [video.id, video]));
-
-                const combinedResults = videoItems.map(item => {
-                    const details = videoMap.get(item.id.videoId);
-                    return {
-                        id: item.id.videoId,
-                        title: item.snippet.title,
-                        thumbnailUrl: item.snippet.thumbnails.medium.url || item.snippet.thumbnails.default.url,
-                        channelTitle: item.snippet.channelTitle,
-                        duration: details?.contentDetails?.duration,
-                        views: details?.statistics?.viewCount,
-                    };
-                });
-
-                renderResults(combinedResults, !pageToken); // Clear existing results if it's the first page
-
-            } catch (error) {
-                console.error("API Fetch Error:", error);
-                messageDisplay.textContent = `Error fetching data: ${error.message}. Check your YouTube API key and quota.`;
-                messageDisplay.classList.remove('hidden');
-                nextPageToken = null; // Stop infinite scrolling on error
-            } finally {
+            finally {
                 isFetching = false;
-                loadingSpinner.classList.add('hidden');
+                loadingSpinner.classList.add('hidden'); // Hide infinite scroll spinner
             }
         }
 
@@ -424,14 +387,14 @@
             videoModal.classList.add('flex');
             document.body.style.overflow = 'hidden';
 
-            //load suggested videos 
-            loadSuggestedVideos(videoId);
+            //load suggested videos  TODO, treba napraviti scraper za watch page
+            //loadSuggestedVideos(videoId);
         }
 
 
         async function loadSuggestedVideos(videoId, pageToken = null) {
-                    // Fetch suggested videos using YouTube's related videos endpoint
-             try {
+            // Fetch suggested videos using YouTube's related videos endpoint
+            try {
                 const response = await fetch(`/api/suggestions?videoId=${encodeURIComponent(videoId)}&pageToken=${pageToken || ''}`);
                 if (!response.ok) {
                     throw new Error(`Server Error ${response.status}: ${response.statusText}`);
@@ -444,7 +407,7 @@
                     thumbnailUrl: item.thumbnailUrl || null,
                     duration: item.duration,
                     views: item.views
-                    }));
+                }));
 
                 // Process and render results
                 console.log("Suggested videos:", mapped);
@@ -497,6 +460,39 @@
             if (entry.isIntersecting && nextPageToken && !isFetching) {
                 searchVideos(currentSearchQuery, nextPageToken);
             }
+        }
+
+        /**
+         * Generates and displays a skeleton loading animation in the results container.
+         * This improves perceived performance during API calls.
+         */
+        function renderLoadingSkeleton() {
+            resultsContainer.innerHTML = '';
+            const skeletonCount = 10; // Number of skeleton cards to display
+            const fragment = document.createDocumentFragment();
+
+            for (let i = 0; i < skeletonCount; i++) {
+                const card = document.createElement('div');
+                card.className = "bg-gray-800 rounded-xl overflow-hidden shadow-lg animate-pulse";
+                card.innerHTML = `
+                    <!-- Thumbnail Area -->
+                    <div class="skeleton w-full h-48"></div>
+                    <!-- Text Content Area -->
+                    <div class="p-4 space-y-3">
+                        <!-- Title line 1 -->
+                        <div class="skeleton h-4 w-11/12 rounded"></div>
+                        <!-- Title line 2 (shorter) -->
+                        <div class="skeleton h-4 w-3/4 rounded"></div>
+                        <!-- Channel Title line -->
+                        <div class="skeleton h-3 w-1/2 rounded mt-2"></div>
+                        <!-- Views/Metadata line -->
+                        <div class="skeleton h-3 w-1/4 rounded"></div>
+                    </div>
+                `;
+                fragment.appendChild(card);
+            }
+
+            resultsContainer.appendChild(fragment);
         }
 
         // Initialize the app
