@@ -42,6 +42,7 @@ async function youtube(query, maxPages = 5) {
 
         if (!json.nextPageToken) break;
     }
+    console.log(`json: ${JSON.stringify(json)}`);   
 
     return json;
 }

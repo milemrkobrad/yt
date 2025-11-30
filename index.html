@@ -289,7 +289,9 @@
                     title: item.video.title,
                     thumbnailUrl: item.video.thumbnail_src || null,
                     duration: item.video.duration,
-                    views: item.video.views
+                    views: item.video.views,
+                    upload_date: item.video.upload_date || 'N/A',
+                    uploader: item.uploader.username || 'Unknown'
                 }));
 
                 // Process and render results
@@ -338,7 +340,7 @@
                             onerror="this.onerror=null;this.src='https://placehold.co/480x270/1f2937/FFFFFF?text=Video+Not+Found'"
                         >
                         <span class="absolute bottom-2 right-2 bg-black bg-opacity-80 text-xs font-semibold px-2 py-0.5 rounded text-white shadow-md">
-                            ${durationText}
+                            ${video.duration}
                         </span>
                     </div>
                     <div class="p-4">
@@ -346,10 +348,10 @@
                             ${video.title}
                         </h2>
                         <p class="text-gray-400 text-sm mb-1 line-clamp-1">
-                            ${video.channelTitle}
+                            ${video.upload_date} • ${video.uploader}
                         </p>
                         <p class="text-gray-500 text-xs">
-                            <i class="fas fa-eye mr-1"></i>${viewsText}
+                            <i class="fas fa-eye mr-1"></i>${video.views}
                         </p>
                     </div>
                 `;
