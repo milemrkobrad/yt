@@ -284,8 +284,10 @@
                     throw new Error(`Server Error ${response.status}: ${response.statusText}`);
                 }
                 const data = await response.json();
-                console.log("Sdata:", data);
-                const mapped = data.results.map(item => ({
+                
+                const mapped = (data.results || [])
+                    .filter(item => item && item.video && item.uploader)  //check if every item has video and uploader property
+                    .map(item => ({
                     id: item.video.id,
                     title: item.video.title,
                     thumbnailUrl: item.video.thumbnail_src || null,
