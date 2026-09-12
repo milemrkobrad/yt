@@ -3,6 +3,7 @@ const scraperSearch = require('./scraperSearch');
 const scraperWatch = require('./scraperWatch');
 const app = express();
 const scraperStream = require('./scraperStream');
+const { Readable } = require('stream');
 app.use(express.json()); //Used to parse JSON bodies
 app.use(express.urlencoded()); //Parse URL-encoded bodies
 
@@ -56,6 +57,52 @@ app.get('/api/stream/:videoId', async (req, res) => {
     } catch (err) {
         console.error('stream error:', err.message);
         res.status(500).json({ error: 'Failed to extract stream', details: err.message });
+    }
+});
+
+// --- Audio proxy ---
+// googlevideo.com URLs are IP-locked to whichever server fetched them (your Render
+// instance). A phone on a different network gets 403 if it hits that URL directly.
+// This route re-fetches from Render's IP and streams the bytes through to the client,
+// so the client only ever talks to your own backend.
+//
+// Also caches the extracted URL briefly so a burst of Range requests for the same
+// video (normal for audio players seeking/buffering) doesn't re-run extraction every time.
+const streamCache = new Map(); // videoId -> { audioUrl, mimeType, fetchedAt }
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 min -- comfortably under googlevideo's multi-hour URL expiry
+
+async function getCachedAudioInfo(videoId) {
+    const cached = streamCache.get(videoId);
+    if (cached && (Date.now() - cached.fetchedAt) < CACHE_TTL_MS) {
+        return cached;
+    }
+    const info = await scraperStream.getAudioStream(videoId);
+    const entry = { audioUrl: info.audioUrl, mimeType: info.mimeType, fetchedAt: Date.now() };
+    streamCache.set(videoId, entry);
+    return entry;
+}
+
+app.get('/api/audio/:videoId', async (req, res) => {
+    try {
+        const { audioUrl, mimeType } = await getCachedAudioInfo(req.params.videoId);
+
+        const upstreamHeaders = {};
+        if (req.headers.range) upstreamHeaders['Range'] = req.headers.range;
+
+        const upstream = await fetch(audioUrl, { headers: upstreamHeaders });
+
+        res.status(upstream.status);
+        res.setHeader('Content-Type', mimeType || 'audio/mp4');
+        res.setHeader('Accept-Ranges', 'bytes');
+        const cl = upstream.headers.get('content-length');
+        const cr = upstream.headers.get('content-range');
+        if (cl) res.setHeader('Content-Length', cl);
+        if (cr) res.setHeader('Content-Range', cr);
+
+        Readable.fromWeb(upstream.body).pipe(res);
+    } catch (err) {
+        console.error('audio proxy error:', err.message);
+        if (!res.headersSent) res.status(500).json({ error: 'Failed to proxy audio', details: err.message });
     }
 });
 
