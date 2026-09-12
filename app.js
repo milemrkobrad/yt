@@ -2,6 +2,7 @@ const express = require('express');
 const scraperSearch = require('./scraperSearch');
 const scraperWatch = require('./scraperWatch');
 const app = express();
+const scraperStream = require('./scraperStream');
 app.use(express.json()); //Used to parse JSON bodies
 app.use(express.urlencoded()); //Parse URL-encoded bodies
 
@@ -47,6 +48,17 @@ app.get('/api/suggestions', (req, res) => {
         return res.json(data);
     })();
 });
+
+app.get('/api/stream/:videoId', async (req, res) => {
+    try {
+        const data = await scraperStream.getAudioStream(req.params.videoId);
+        res.json(data);
+    } catch (err) {
+        console.error('stream error:', err.message);
+        res.status(500).json({ error: 'Failed to extract stream', details: err.message });
+    }
+});
+
 
 app.listen(process.env.PORT || 8080, function () {
   console.log('Listening on port 8080');
