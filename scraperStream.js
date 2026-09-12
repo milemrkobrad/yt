@@ -1,14 +1,24 @@
 // scraperStream.js
-// Extracts a direct, playable audio (or video) stream URL for a given YouTube videoId.
+// Extracts a direct, playable audio stream URL for a given YouTube videoId.
 //
-// Uses @distube/ytdl-core, a more actively maintained fork of ytdl-core that tends to
-// keep up better with YouTube's signature-cipher changes. Even so, YouTube changes things
-// periodically and this can break — if that happens, bump the package version first
-// (`npm update @distube/ytdl-core`) before assuming the whole approach is broken.
+// Uses youtubei.js (https://github.com/LuanRT/YouTube.js), which talks to YouTube's
+// internal InnerTube API directly rather than scraping/deciphering the watch page.
+// This is the actively maintained option -- @distube/ytdl-core was archived in Aug 2025
+// and its own README now points people to youtubei.js instead.
 //
-// npm install @distube/ytdl-core
+// npm install youtubei.js
+//
+// NOTE: youtubei.js is ESM-only (no CommonJS export), while this project uses
+// require(). We bridge that with a dynamic import() -- that's allowed inside a
+// CommonJS file and works fine, it's just not a plain top-level require().
 
-const ytdl = require('@distube/ytdl-core');
+let ytPromise = null;
+function getClient() {
+    if (!ytPromise) {
+        ytPromise = import('youtubei.js').then(({ Innertube }) => Innertube.create());
+    }
+    return ytPromise;
+}
 
 /**
  * Get the best available audio-only stream for a video, plus basic metadata.
@@ -24,32 +34,26 @@ const ytdl = require('@distube/ytdl-core');
  * }>}
  */
 async function getAudioStream(videoId) {
-    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const yt = await getClient();
+    const info = await yt.getBasicInfo(videoId);
 
-    const info = await ytdl.getInfo(videoUrl);
-
-    // Pick the best audio-only format (no video track) — smaller payload, exactly what
-    // we want for a music-player-style app. Falls back to any format with audio if for
-    // some reason no audio-only format is offered.
-    const audioFormats = ytdl.filterFormats(info.formats, 'audioonly');
-    const chosen = (audioFormats.length ? audioFormats : ytdl.filterFormats(info.formats, 'audioandvideo'))
-        .sort((a, b) => (b.audioBitrate || 0) - (a.audioBitrate || 0))[0];
-
-    if (!chosen) {
+    const format = info.chooseFormat({ type: 'audio', quality: 'best' });
+    if (!format) {
         throw new Error('No playable audio format found for this video');
     }
 
-    const details = info.videoDetails;
+    const audioUrl = format.decipher(yt.session.player);
+    const details = info.basic_info;
 
     return {
-        audioUrl: chosen.url,
-        mimeType: chosen.mimeType,
-        bitrate: chosen.audioBitrate || 0,
+        audioUrl,
+        mimeType: format.mime_type,
+        bitrate: format.bitrate || 0,
         title: details.title,
-        author: details.author && details.author.name,
-        duration: parseInt(details.lengthSeconds, 10) || 0,
-        thumbnail: details.thumbnails && details.thumbnails.length
-            ? details.thumbnails[details.thumbnails.length - 1].url
+        author: details.author,
+        duration: details.duration || 0,
+        thumbnail: details.thumbnail && details.thumbnail.length
+            ? details.thumbnail[details.thumbnail.length - 1].url
             : null,
     };
 }
